@@ -20,10 +20,13 @@ STRICT_MODE_ON
 #include "LateralControl.h"
 #include "LongitudinalControl.h"
 #include "pnmfile.h"
+#include "image.h"
+
+using namespace segment;
 
 using namespace msr::airlib;
 
-bool finish(const msr::airlib::Pose &pose)
+bool finish(const msr::airlib::Pose& pose)
 {
 	if (pose.position[0] > -3 && pose.position[0] < -1) {
 		if (pose.position[1] > -5 && pose.position[1] < 5) {
@@ -34,7 +37,7 @@ bool finish(const msr::airlib::Pose &pose)
 
 }
 
-bool add(const msr::airlib::Pose &initial, const msr::airlib::Pose &final, float intervalo)
+bool add(const msr::airlib::Pose& initial, const msr::airlib::Pose & final, float intervalo)
 {
 	float final_x = final.position[0];
 	float final_y = final.position[1];
@@ -46,7 +49,7 @@ bool add(const msr::airlib::Pose &initial, const msr::airlib::Pose &final, float
 	return false;
 }
 
-void drive(msr::airlib::CarRpcLibClient &client, float &acceleration, float &steering) {
+void drive(msr::airlib::CarRpcLibClient& client, float& acceleration, float& steering) {
 	CarApiBase::CarControls controls;
 	if (acceleration >= 0)
 		controls.throttle = acceleration;
@@ -55,6 +58,28 @@ void drive(msr::airlib::CarRpcLibClient &client, float &acceleration, float &ste
 	controls.steering = steering;
 	client.setCarControls(controls);
 }
+
+bool LeituraMapa(const char* mapaPista, int x, int y) {
+	image<uchar>* faixa;
+	faixa = loadPBM(mapaPista);
+	if (faixa->access[150 + x][150 + y] == 1) {
+		return 1;
+	}
+}
+
+//Nessa função é feita a leitura do mapa. Quando o mapa for preto retorna verdadeiro
+
+void VerificaDentroOuFora(const char* mapaPista, int x, int y) {
+	image<uchar>* pista;
+	pista = new image<unsigned char>(300, 300, false);
+	pista->init(1);
+	pista->access[150 + x][150 + y] = 0;
+	if (pista->access[150 + x][150 + y] == 0 && LeituraMapa(mapaPista, x, y)) {
+		std::cout << "Fora da faixa" << "  ";
+	}
+}
+
+//Verifica os mapas. Quando for branco no novo mapa aperece que está fora da faixa
 
 int main()
 {
@@ -70,7 +95,7 @@ int main()
 	std::cout << "[3] Para o Carro mapear automaticamente.\n";
 	std::cin >> option;
 
-	segment::image<unsigned char> *map = 0;
+	segment::image<unsigned char>* map = 0;
 
 	try {
 		client.confirmConnection();
@@ -99,7 +124,13 @@ int main()
 			if (option == 1) {
 				if (add(car_pose_previous, car_pose_current, 3.0)) {
 					trajectory.AddWaypoints(car_pose_current.position[0], car_pose_current.position[1], car_speed);
-					car_pose_previous = car_pose_current;				
+					car_pose_previous = car_pose_current;
+
+					int x = (int)car_pose_current.position[0];
+					int y = (int)car_pose_current.position[1];
+
+					VerificaDentroOuFora("Mapa.pbm", x, y);
+
 				}
 			}
 			if (option >= 2) {
@@ -108,13 +139,19 @@ int main()
 				float steering = lateral_control.Update(checkpoints, pose, car_speed);
 				float acceleration = velocity_control.Update(car_speed, desired_velocity);
 				drive(client, acceleration, steering);
+
+				int x = (int)car_pose_current.position[0];
+				int y = (int)car_pose_current.position[1];
+
+				VerificaDentroOuFora("Mapa.pbm", x, y);
+
 			}
 			if (option == 3)
 			{
 				int x = (int)car_pose_current.position[0];
 				int y = (int)car_pose_current.position[1];
-				map->access[150+x][150+y] = 0; //Translada as coordenadas para garantir que os indices sejam sempre positivos
-				
+				map->access[150 + x][150 + y] = 0; //Translada as coordenadas para garantir que os indices sejam sempre positivos
+
 				// TODO : mapear a pista colocando 0 em toda sua extensao em nao somente na trajetoria do carro como foi feito acima
 			}
 
@@ -131,10 +168,10 @@ int main()
 		}
 	}
 
-	catch (rpc::rpc_error&  e) {
+	catch (rpc::rpc_error& e) {
 		std::string msg = e.get_error().as<std::string>();
 		std::cout << "Verifique os erros enviados pela API do AirSim." << std::endl << msg << std::endl; std::cin.get();
 	}
-	
+
 	return 0;
 }
